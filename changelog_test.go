@@ -409,7 +409,9 @@ func TestFindChangelog(t *testing.T) {
 	t.Run("finds changelog.md", func(t *testing.T) {
 		dir := t.TempDir()
 		content := "## [1.0.0] - 2024-01-01\n\nSome content that is long enough to pass the size check, we need at least one hundred bytes here to make sure.\n"
-		os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte(content), 0644)
+		if err := os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
 
 		path, err := FindChangelog(dir)
 		if err != nil {
