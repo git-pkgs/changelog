@@ -60,6 +60,21 @@ The first capture group is the version string. An optional second capture group 
 content, ok := p.Between("1.0.0", "2.0.0")
 ```
 
+### Fetch and parse from a repository URL
+
+```go
+p, err := changelog.FetchAndParse(ctx, "https://github.com/owner/repo", "CHANGELOG.md")
+```
+
+Constructs a raw content URL (GitHub and GitLab are supported), fetches the file, and parses it.
+
+You can also build the raw URL yourself:
+
+```go
+url, err := changelog.RawContentURL("https://github.com/owner/repo", "CHANGELOG.md")
+// "https://raw.githubusercontent.com/owner/repo/HEAD/CHANGELOG.md"
+```
+
 ### Find line number for a version
 
 ```go
