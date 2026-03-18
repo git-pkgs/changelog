@@ -247,7 +247,8 @@ func (p *Parser) Between(oldVersion, newVersion string) (string, bool) {
 	var start, end int
 	found := false
 
-	if oldLine >= 0 && newLine >= 0 {
+	switch {
+	case oldLine >= 0 && newLine >= 0:
 		if oldLine < newLine {
 			// Ascending: old appears first, take from old line to end
 			start = oldLine
@@ -258,14 +259,14 @@ func (p *Parser) Between(oldVersion, newVersion string) (string, bool) {
 			end = oldLine
 		}
 		found = true
-	} else if oldLine >= 0 {
+	case oldLine >= 0:
 		if oldLine == 0 {
 			return "", false
 		}
 		start = 0
 		end = oldLine
 		found = true
-	} else if newLine >= 0 {
+	case newLine >= 0:
 		start = newLine
 		end = len(lines)
 		found = true
