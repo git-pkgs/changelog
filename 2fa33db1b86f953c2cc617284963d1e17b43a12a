@@ -1,0 +1,27 @@
+fetch.go
+  264fbf03ced01252 25-28
+changelog.go
+  264fbf03ced01252 250-251,262,269
+changelog_test.go
+  264fbf03ced01252 480-482,587
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "2fa33db1b86f953c2cc617284963d1e17b43a12a",
+  "prompts": {
+    "264fbf03ced01252": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25482688-269b-4034-af25-3b91c10acbc3",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Andrew Nesbitt <andrewnez@gmail.com>",
+      "messages": [],
+      "total_additions": 25,
+      "total_deletions": 18,
+      "accepted_lines": 12,
+      "overriden_lines": 0
+    }
+  }
+}
