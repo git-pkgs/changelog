@@ -61,13 +61,13 @@ func TestKeepAChangelogFormat(t *testing.T) {
 		}
 
 		entry, _ = p.Entry("1.1.0")
-		assertDate(t, entry.Date, 2024, time.March, 15)
+		assertDate(t, entry.Date, time.March, 15)
 
 		entry, _ = p.Entry("1.0.1")
-		assertDate(t, entry.Date, 2024, time.February, 1)
+		assertDate(t, entry.Date, time.February, 1)
 
 		entry, _ = p.Entry("1.0.0")
-		assertDate(t, entry.Date, 2024, time.January, 15)
+		assertDate(t, entry.Date, time.January, 15)
 	})
 
 	t.Run("extracts content", func(t *testing.T) {
@@ -95,7 +95,7 @@ func TestMarkdownHeaderFormat(t *testing.T) {
 		if !ok {
 			t.Fatal("2.0.0 not found")
 		}
-		assertDate(t, entry.Date, 2024, time.March, 1)
+		assertDate(t, entry.Date, time.March, 1)
 	})
 
 	t.Run("parses versions without dates", func(t *testing.T) {
@@ -181,7 +181,7 @@ func TestCustomPattern(t *testing.T) {
 		}
 
 		entry, _ := p.Entry("1.2.0")
-		assertDate(t, entry.Date, 2024, time.January, 1)
+		assertDate(t, entry.Date, time.January, 1)
 	})
 
 	t.Run("custom match group", func(t *testing.T) {
@@ -477,6 +477,9 @@ func TestEdgeCases(t *testing.T) {
 		}
 	})
 
+}
+
+func TestEdgeCasesContent(t *testing.T) {
 	t.Run("preserves markdown links", func(t *testing.T) {
 		p := Parse("## [1.0.0] - 2024-01-01\n\n- Added [feature](https://example.com)\n- See [docs](https://docs.example.com) for details\n")
 		entry, _ := p.Entry("1.0.0")
@@ -552,7 +555,7 @@ func TestEdgeCases(t *testing.T) {
 		if !ok {
 			t.Fatal("1.0.0 not found")
 		}
-		assertDate(t, entry.Date, 2024, time.January, 1)
+		assertDate(t, entry.Date, time.January, 1)
 	})
 }
 
@@ -576,11 +579,12 @@ func TestComprehensiveFixture(t *testing.T) {
 	}
 }
 
-func assertDate(t *testing.T, got *time.Time, year int, month time.Month, day int) {
+func assertDate(t *testing.T, got *time.Time, month time.Month, day int) {
 	t.Helper()
 	if got == nil {
 		t.Fatal("expected non-nil date")
 	}
+	const year = 2024
 	if got.Year() != year || got.Month() != month || got.Day() != day {
 		t.Errorf("date = %v, want %d-%02d-%02d", got, year, month, day)
 	}
