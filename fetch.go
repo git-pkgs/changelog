@@ -22,8 +22,10 @@ func RawContentURL(repoURL, filename string) (string, error) {
 		return "", fmt.Errorf("parsing repository URL: %w", err)
 	}
 
-	parts := strings.SplitN(strings.TrimPrefix(parsed.Path, "/"), "/", 3)
-	if len(parts) < 2 {
+	const maxURLParts = 3
+	const minURLParts = 2
+	parts := strings.SplitN(strings.TrimPrefix(parsed.Path, "/"), "/", maxURLParts)
+	if len(parts) < minURLParts {
 		return "", fmt.Errorf("cannot parse owner/repo from %s", repoURL)
 	}
 	owner := parts[0]
