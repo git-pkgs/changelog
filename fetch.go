@@ -65,7 +65,8 @@ func FetchAndParse(ctx context.Context, repoURL, filename string) (*Parser, erro
 		return nil, fmt.Errorf("HTTP %d fetching %s", resp.StatusCode, rawURL)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	const maxBodySize = 1 << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodySize))
 	if err != nil {
 		return nil, err
 	}
