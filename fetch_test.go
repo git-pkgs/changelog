@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -97,4 +99,39 @@ func TestFetchAndParse(t *testing.T) {
 			t.Error("expected error for unsupported host")
 		}
 	})
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestFetchAndParseLimitsBodySize(t *testing.T) {
+	const limit = 1 << 20
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("## [1.0.0] - 2024-01-01\n\n"))
+		_, _ = w.Write([]byte(strings.Repeat("a", limit*2)))
+	}))
+	defer srv.Close()
+
+	srvURL, _ := url.Parse(srv.URL)
+
+	origTransport := http.DefaultClient.Transport
+	http.DefaultClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		req.URL.Scheme = srvURL.Scheme
+		req.URL.Host = srvURL.Host
+		return http.DefaultTransport.RoundTrip(req)
+	})
+	defer func() { http.DefaultClient.Transport = origTransport }()
+
+	parser, err := FetchAndParse(context.Background(), "https://github.com/owner/repo", "CHANGELOG.md")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(parser.content) > limit {
+		t.Errorf("body not capped: got %d bytes, want <= %d", len(parser.content), limit)
+	}
 }
