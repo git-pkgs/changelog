@@ -220,22 +220,25 @@ func (p *Parser) Versions() []string {
 // than or equal to to, newest first. An empty bound leaves that side open.
 func (p *Parser) VersionsBetween(from, to string) []string {
 	p.ensureParsed()
+	from = trimVersionPrefix(from)
+	to = trimVersionPrefix(to)
 	versions := make([]string, 0, len(p.entries))
 	for _, ve := range p.entries {
-		if !vers.Valid(ve.version) {
+		version := trimVersionPrefix(ve.version)
+		if !vers.Valid(version) {
 			continue
 		}
-		if from != "" && vers.Compare(ve.version, from) <= 0 {
+		if from != "" && vers.Compare(version, from) <= 0 {
 			continue
 		}
-		if to != "" && vers.Compare(ve.version, to) > 0 {
+		if to != "" && vers.Compare(version, to) > 0 {
 			continue
 		}
 		versions = append(versions, ve.version)
 	}
 
 	slices.SortStableFunc(versions, func(a, b string) int {
-		return vers.Compare(b, a)
+		return vers.Compare(trimVersionPrefix(b), trimVersionPrefix(a))
 	})
 	return versions
 }
@@ -314,8 +317,7 @@ func (p *Parser) LineForVersion(version string) int {
 		return -1
 	}
 
-	version = strings.TrimPrefix(version, "v")
-	version = strings.TrimPrefix(version, "V")
+	version = trimVersionPrefix(version)
 	escaped := regexp.QuoteMeta(version)
 
 	// Go's regexp doesn't support lookbehinds, so we check surrounding
@@ -363,6 +365,11 @@ func (p *Parser) LineForVersion(version string) int {
 	}
 
 	return -1
+}
+
+func trimVersionPrefix(version string) string {
+	version = strings.TrimPrefix(version, "v")
+	return strings.TrimPrefix(version, "V")
 }
 
 // containsVersion checks if a line contains the version string without it

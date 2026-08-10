@@ -330,6 +330,7 @@ func TestVersionsBetween(t *testing.T) {
 		{name: "open upper bound", from: "2.0.0", want: []string{"3.0.0"}},
 		{name: "both bounds open", want: []string{"3.0.0", "2.0.0", "1.0.0"}},
 		{name: "missing endpoints", from: "1.5.0", to: "2.5.0", want: []string{"2.0.0"}},
+		{name: "uppercase v bounds", from: "V1.0.0", to: "V3.0.0", want: []string{"3.0.0", "2.0.0"}},
 		{name: "equal endpoints", from: "2.0.0", to: "2.0.0", want: []string{}},
 		{name: "inverted range", from: "3.0.0", to: "1.0.0", want: []string{}},
 	}
@@ -358,6 +359,15 @@ func TestVersionsBetweenVersionFormats(t *testing.T) {
 		p := Parse("## [1.0.0-beta.2]\n\nBeta 2\n\n## [1.0.0]\n\nStable\n\n## [1.0.0-beta.10]\n\nBeta 10\n")
 		got := p.VersionsBetween("1.0.0-alpha", "1.0.0")
 		want := []string{"1.0.0", "1.0.0-beta.10", "1.0.0-beta.2"}
+		if !slices.Equal(got, want) {
+			t.Errorf("VersionsBetween() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("uppercase v headings", func(t *testing.T) {
+		p := Parse("## [V1.0.0]\n\nFirst\n\n## [V2.0.0]\n\nSecond\n")
+		got := p.VersionsBetween("V1.0.0", "V2.0.0")
+		want := []string{"V2.0.0"}
 		if !slices.Equal(got, want) {
 			t.Errorf("VersionsBetween() = %v, want %v", got, want)
 		}
