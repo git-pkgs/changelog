@@ -28,16 +28,18 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/git-pkgs/vers"
 )
 
 // Format represents a changelog file format.
 type Format int
 
 const (
-	FormatAuto          Format = iota // Auto-detect format
-	FormatKeepAChangelog              // ## [version] - date
-	FormatMarkdown                    // ## version (date)
-	FormatUnderline                   // version\n=====
+	FormatAuto           Format = iota // Auto-detect format
+	FormatKeepAChangelog               // ## [version] - date
+	FormatMarkdown                     // ## version (date)
+	FormatUnderline                    // version\n=====
 )
 
 // Entry holds the parsed data for a single changelog version.
@@ -48,8 +50,8 @@ type Entry struct {
 
 // Compiled patterns for each format.
 var (
-	keepAChangelog = regexp.MustCompile(`(?m)^##\s+\[([^\]]+)\](?:\s+-\s+(\d{4}-\d{2}-\d{2}))?`)
-	markdownHeader = regexp.MustCompile(`(?m)^#{1,3}\s+v?([\w.+-]+\.[\w.+-]+[a-zA-Z0-9])(?:\s+\((\d{4}-\d{2}-\d{2})\))?`)
+	keepAChangelog  = regexp.MustCompile(`(?m)^##\s+\[([^\]]+)\](?:\s+-\s+(\d{4}-\d{2}-\d{2}))?`)
+	markdownHeader  = regexp.MustCompile(`(?m)^#{1,3}\s+v?([\w.+-]+\.[\w.+-]+[a-zA-Z0-9])(?:\s+\((\d{4}-\d{2}-\d{2})\))?`)
 	underlineHeader = regexp.MustCompile(`(?m)^([\w.+-]+\.[\w.+-]+[a-zA-Z0-9])\n[=-]+`)
 )
 
@@ -211,6 +213,30 @@ func (p *Parser) Versions() []string {
 	for i, ve := range p.entries {
 		versions[i] = ve.version
 	}
+	return versions
+}
+
+// VersionsBetween returns valid version strings greater than from and less
+// than or equal to to, newest first. An empty bound leaves that side open.
+func (p *Parser) VersionsBetween(from, to string) []string {
+	p.ensureParsed()
+	versions := make([]string, 0, len(p.entries))
+	for _, ve := range p.entries {
+		if !vers.Valid(ve.version) {
+			continue
+		}
+		if from != "" && vers.Compare(ve.version, from) <= 0 {
+			continue
+		}
+		if to != "" && vers.Compare(ve.version, to) > 0 {
+			continue
+		}
+		versions = append(versions, ve.version)
+	}
+
+	slices.SortStableFunc(versions, func(a, b string) int {
+		return vers.Compare(b, a)
+	})
 	return versions
 }
 

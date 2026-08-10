@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -312,6 +313,64 @@ func TestLineForVersionRange(t *testing.T) {
 	if got := p.LineForVersion("1.0.0"); got != 2 {
 		t.Errorf("LineForVersion(1.0.0) = %d, want 2", got)
 	}
+}
+
+func TestVersionsBetween(t *testing.T) {
+	content := "## [2.0.0]\n\nSecond\n\n## [Unreleased]\n\nNext\n\n## [1.0.0]\n\nFirst\n\n## [3.0.0]\n\nThird\n"
+	p := Parse(content)
+
+	tests := []struct {
+		name string
+		from string
+		to   string
+		want []string
+	}{
+		{name: "bounded", from: "1.0.0", to: "3.0.0", want: []string{"3.0.0", "2.0.0"}},
+		{name: "open lower bound", to: "2.0.0", want: []string{"2.0.0", "1.0.0"}},
+		{name: "open upper bound", from: "2.0.0", want: []string{"3.0.0"}},
+		{name: "both bounds open", want: []string{"3.0.0", "2.0.0", "1.0.0"}},
+		{name: "missing endpoints", from: "1.5.0", to: "2.5.0", want: []string{"2.0.0"}},
+		{name: "equal endpoints", from: "2.0.0", to: "2.0.0", want: []string{}},
+		{name: "inverted range", from: "3.0.0", to: "1.0.0", want: []string{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := p.VersionsBetween(tt.from, tt.to)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("VersionsBetween(%q, %q) = %v, want %v", tt.from, tt.to, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVersionsBetweenVersionFormats(t *testing.T) {
+	t.Run("calver", func(t *testing.T) {
+		p := Parse("## [2024.9]\n\nSeptember\n\n## [2024.10]\n\nOctober\n")
+		got := p.VersionsBetween("2024.8", "2024.11")
+		want := []string{"2024.10", "2024.9"}
+		if !slices.Equal(got, want) {
+			t.Errorf("VersionsBetween() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("prerelease", func(t *testing.T) {
+		p := Parse("## [1.0.0-beta.2]\n\nBeta 2\n\n## [1.0.0]\n\nStable\n\n## [1.0.0-beta.10]\n\nBeta 10\n")
+		got := p.VersionsBetween("1.0.0-alpha", "1.0.0")
+		want := []string{"1.0.0", "1.0.0-beta.10", "1.0.0-beta.2"}
+		if !slices.Equal(got, want) {
+			t.Errorf("VersionsBetween() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("loose version", func(t *testing.T) {
+		p := Parse("## [1.2b1]\n\nBeta 1\n\n## [1.2a1]\n\nAlpha 1\n")
+		got := p.VersionsBetween("1.2a0", "1.2b1")
+		want := []string{"1.2b1", "1.2a1"}
+		if !slices.Equal(got, want) {
+			t.Errorf("VersionsBetween() = %v, want %v", got, want)
+		}
+	})
 }
 
 func TestBetween(t *testing.T) {
