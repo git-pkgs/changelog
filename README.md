@@ -54,6 +54,17 @@ p := changelog.ParseWithPattern(content, pattern)
 
 The first capture group is the version string. An optional second capture group is parsed as a date (YYYY-MM-DD).
 
+### Get versions in a range
+
+```go
+for _, v := range p.VersionsBetween("1.0.0", "2.0.0") {
+    entry, _ := p.Entry(v)
+    fmt.Printf("%s: %s\n", v, entry.Content)
+}
+```
+
+`VersionsBetween` returns valid versions greater than the first bound and less than or equal to the second, newest first. An empty bound leaves that side open.
+
 ### Get content between versions
 
 ```go
