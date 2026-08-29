@@ -1,6 +1,6 @@
 # changelog
 
-A Go library for parsing changelog files into structured entries. Supports Keep a Changelog, markdown header, and setext/underline formats with automatic detection.
+A Go library for parsing changelog files into structured entries. Automatic detection supports Keep a Changelog, markdown headers, setext/underline headings, and common single-line version headers.
 
 Port of the Ruby [changelog-parser](https://github.com/git-pkgs/changelog-parser) gem.
 
