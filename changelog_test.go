@@ -226,6 +226,47 @@ func TestFormatDetection(t *testing.T) {
 	})
 }
 
+func TestShortVersionHeaders(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		pattern *regexp.Regexp
+		want    string
+	}{
+		{
+			name:    "markdown",
+			content: "## 1.0\n\nFirst\n\n## 1.1\n\nSecond\n\n## 1.2\n\nThird\n",
+			pattern: markdownHeader,
+			want:    "## 1.1\n\nSecond",
+		},
+		{
+			name:    "underline",
+			content: "1.0\n===\n\nFirst\n\n1.1\n===\n\nSecond\n\n1.2\n===\n\nThird\n",
+			pattern: underlineHeader,
+			want:    "1.1\n===\n\nSecond",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Parse(tt.content)
+			if p.pattern != tt.pattern {
+				t.Fatalf("detected pattern %q, want %q", p.pattern, tt.pattern)
+			}
+			if !slices.Equal(p.Versions(), []string{"1.0", "1.1", "1.2"}) {
+				t.Fatalf("Versions() = %v", p.Versions())
+			}
+			result, ok := p.Between("1.0", "1.1")
+			if !ok {
+				t.Fatal("expected result")
+			}
+			if result != tt.want {
+				t.Errorf("Between() = %q, want %q", result, tt.want)
+			}
+		})
+	}
+}
+
 func TestLineForVersion(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -266,6 +307,36 @@ func TestLineForVersion(t *testing.T) {
 		{
 			name:     "colon version",
 			content:  "1.0.0: Initial release\n\nContent",
+			version:  "1.0.0",
+			wantLine: 0,
+		},
+		{
+			name:     "plain bracket version",
+			content:  "[1.0.0]\n\nContent",
+			version:  "1.0.0",
+			wantLine: 0,
+		},
+		{
+			name:     "bang version",
+			content:  "! 1.0.0\n\nContent",
+			version:  "1.0.0",
+			wantLine: 0,
+		},
+		{
+			name:     "equals version",
+			content:  "== 1.0.0\n\nContent",
+			version:  "1.0.0",
+			wantLine: 0,
+		},
+		{
+			name:     "date version",
+			content:  "2024-01-01 - version 1.0.0\n\nContent",
+			version:  "1.0.0",
+			wantLine: 0,
+		},
+		{
+			name:     "bare version",
+			content:  "1.0.0 Initial release\n\nContent",
 			version:  "1.0.0",
 			wantLine: 0,
 		},
@@ -436,17 +507,183 @@ func TestBetween(t *testing.T) {
 		}
 	})
 
-	t.Run("ascending changelog", func(t *testing.T) {
-		ascending := "## [1.0.0] - 2024-01-01\n\nFirst\n\n## [2.0.0] - 2024-02-01\n\nSecond\n"
+	t.Run("between adjacent versions ascending", func(t *testing.T) {
+		ascending := "## [1.0.0]\n\nFirst\n\n## [2.0.0]\n\nSecond\n\n## [3.0.0]\n\nThird\n"
 		ap := Parse(ascending)
 		result, ok := ap.Between("1.0.0", "2.0.0")
 		if !ok {
 			t.Fatal("expected result")
 		}
-		if !strings.Contains(result, "Second") {
-			t.Error("expected result to contain 'Second'")
+		want := "## [2.0.0]\n\nSecond"
+		if result != want {
+			t.Errorf("Between() = %q, want %q", result, want)
 		}
 	})
+
+	t.Run("between non-adjacent versions ascending", func(t *testing.T) {
+		ascending := "## [1.0.0]\n\nFirst\n\n## [2.0.0]\n\nSecond\n\n## [3.0.0]\n\nThird\n\n## [4.0.0]\n\nFourth\n"
+		ap := Parse(ascending)
+		result, ok := ap.Between("1.0.0", "3.0.0")
+		if !ok {
+			t.Fatal("expected result")
+		}
+		want := "## [2.0.0]\n\nSecond\n\n## [3.0.0]\n\nThird"
+		if result != want {
+			t.Errorf("Between() = %q, want %q", result, want)
+		}
+	})
+}
+
+func TestBetweenMissingBound(t *testing.T) {
+	content := "## [3.0.0]\n\nThird\n\n## [2.0.0]\n\nSecond\n\n## [1.0.0]\n\nFirst\n"
+	p := Parse(content)
+	tests := []struct {
+		name       string
+		oldVersion string
+		newVersion string
+	}{
+		{name: "old version", oldVersion: "9.0.0", newVersion: "2.0.0"},
+		{name: "new version", oldVersion: "2.0.0", newVersion: "9.0.0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, ok := p.Between(tt.oldVersion, tt.newVersion); ok {
+				t.Error("expected no result when a bound is not found")
+			}
+		})
+	}
+}
+
+func TestBetweenVersionMentionInReleaseNote(t *testing.T) {
+	tests := []struct {
+		name string
+		note string
+	}{
+		{name: "earlier version", note: "- version 0.9.0 is no longer supported"},
+		{name: "later version", note: "- version 3.0.0 requires migration"},
+		{name: "standalone later version", note: "- version 3.0.0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ascending := "## [1.0.0]\n\nFirst\n\n## [2.0.0]\n\n" + tt.note + "\n\nSecond\n\n## [3.0.0]\n\nThird\n"
+			result, ok := Parse(ascending).Between("1.0.0", "2.0.0")
+			if !ok {
+				t.Fatal("expected result")
+			}
+			want := "## [2.0.0]\n\n" + tt.note + "\n\nSecond"
+			if result != want {
+				t.Errorf("Between() = %q, want %q", result, want)
+			}
+		})
+	}
+}
+
+func TestBetweenBuildMetadataAscending(t *testing.T) {
+	ascending := "## [1.0.0+build.1]\n\nFirst\n\n## [1.0.0+build.2]\n\nSecond\n\n## [1.0.0+build.3]\n\nThird\n"
+	result, ok := Parse(ascending).Between("1.0.0+build.1", "1.0.0+build.2")
+	if !ok {
+		t.Fatal("expected result")
+	}
+	want := "## [1.0.0+build.2]\n\nSecond"
+	if result != want {
+		t.Errorf("Between() = %q, want %q", result, want)
+	}
+}
+
+func TestBetweenRejectsMixedHeaders(t *testing.T) {
+	content := "1.0.0: First\n\n## [2.0.0]\n\nSecond\n\n## [3.0.0]\n\nThird\n\n4.0.0: Fourth\n"
+	if _, ok := Parse(content).Between("1.0.0", "2.0.0"); ok {
+		t.Error("expected no result when a bound uses a different header format")
+	}
+}
+
+func TestBetweenCustomPatternAscending(t *testing.T) {
+	content := "Version 1.0.0\n\nFirst\n\nVersion 2.0.0\n\nSecond\n\nVersion 3.0.0\n\nThird\n"
+	pattern := regexp.MustCompile(`^Version ([\d.]+)`)
+	result, ok := ParseWithPattern(content, pattern).Between("1.0.0", "2.0.0")
+	if !ok {
+		t.Fatal("expected result")
+	}
+	want := "Version 2.0.0\n\nSecond"
+	if result != want {
+		t.Errorf("Between() = %q, want %q", result, want)
+	}
+}
+
+func TestBetweenAlternateHeadersAscending(t *testing.T) {
+	tests := []struct {
+		name       string
+		content    string
+		oldVersion string
+		newVersion string
+		want       string
+		pattern    *regexp.Regexp
+	}{
+		{
+			name:       "bullet headers",
+			content:    "- version 1.0.0\n\nFirst\n\n- version 2.0.0\n\nSecond\n\n- version 3.0.0\n\nThird\n\n- version 4.0.0\n\nFourth\n",
+			oldVersion: "1.0.0",
+			newVersion: "3.0.0",
+			want:       "- version 2.0.0\n\nSecond\n\n- version 3.0.0\n\nThird",
+			pattern:    bulletHeader,
+		},
+		{
+			name:       "bullet headers with version bullet",
+			content:    "- version 1.0.0\n\nFirst\n\n- version 2.0.0\n\n- version 0.9.0 is no longer supported\n\nSecond\n\n- version 3.0.0\n\nThird\n",
+			oldVersion: "1.0.0",
+			newVersion: "2.0.0",
+			want:       "- version 2.0.0\n\n- version 0.9.0 is no longer supported\n\nSecond",
+			pattern:    bulletHeader,
+		},
+		{
+			name:       "bullet headers with suffix and version bullet",
+			content:    "- version 1.0.0 (2024-01-01)\n\nFirst\n\n- version 2.0.0 (2024-02-01)\n\n- version 0.9.0 is no longer supported\n\nSecond\n\n- version 3.0.0 (2024-03-01)\n\nThird\n",
+			oldVersion: "1.0.0",
+			newVersion: "2.0.0",
+			want:       "- version 2.0.0 (2024-02-01)\n\n- version 0.9.0 is no longer supported\n\nSecond",
+			pattern:    bulletHeader,
+		},
+		{
+			name:       "colon headers",
+			content:    "2024.9: September\n\n2024.10: October\n\n2024.11: November\n\n2024.12: December\n",
+			oldVersion: "2024.9",
+			newVersion: "2024.11",
+			want:       "2024.10: October\n\n2024.11: November",
+			pattern:    colonHeader,
+		},
+		{
+			name:       "colon headers with version bullet",
+			content:    "2024.9: September\n\n2024.10: October\n\n- version 0.9.0\n\nMore\n\n2024.11: November\n",
+			oldVersion: "2024.9",
+			newVersion: "2024.10",
+			want:       "2024.10: October\n\n- version 0.9.0\n\nMore",
+			pattern:    colonHeader,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Parse(tt.content)
+			if p.pattern != tt.pattern {
+				t.Fatalf("detected pattern %q, want %q", p.pattern, tt.pattern)
+			}
+			if p.LineForVersion(tt.newVersion) < 0 {
+				t.Fatalf("LineForVersion(%q) did not find a header", tt.newVersion)
+			}
+			if _, ok := p.Entry(tt.newVersion); !ok {
+				t.Fatalf("Entry(%q) did not find a header", tt.newVersion)
+			}
+			result, ok := p.Between(tt.oldVersion, tt.newVersion)
+			if !ok {
+				t.Fatal("expected result")
+			}
+			if result != tt.want {
+				t.Errorf("Between() = %q, want %q", result, tt.want)
+			}
+		})
+	}
 }
 
 func TestParseFile(t *testing.T) {

@@ -1,8 +1,8 @@
 // Package changelog parses changelog files into structured entries.
 //
-// It supports three common formats: Keep a Changelog (## [version] - date),
-// markdown headers (## version or ### version), and setext/underline style
-// (version\n=====). Format detection is automatic by default.
+// It supports Keep a Changelog (## [version] - date), markdown headers
+// (## version or ### version), setext/underline style (version\n=====), and
+// common single-line version headers. Format detection is automatic by default.
 //
 // Basic usage:
 //
@@ -48,11 +48,19 @@ type Entry struct {
 	Content string
 }
 
+const versionTokenPattern = `[\w.+-]+\.[\w.+-]*[a-zA-Z0-9]`
+
 // Compiled patterns for each format.
 var (
 	keepAChangelog  = regexp.MustCompile(`(?m)^##\s+\[([^\]]+)\](?:\s+-\s+(\d{4}-\d{2}-\d{2}))?`)
-	markdownHeader  = regexp.MustCompile(`(?m)^#{1,3}\s+v?([\w.+-]+\.[\w.+-]+[a-zA-Z0-9])(?:\s+\((\d{4}-\d{2}-\d{2})\))?`)
-	underlineHeader = regexp.MustCompile(`(?m)^([\w.+-]+\.[\w.+-]+[a-zA-Z0-9])\n[=-]+`)
+	markdownHeader  = regexp.MustCompile(`(?m)^#{1,3}\s+v?(` + versionTokenPattern + `)(?:\s+\((\d{4}-\d{2}-\d{2})\))?`)
+	underlineHeader = regexp.MustCompile(`(?m)^(` + versionTokenPattern + `)\n[=-]+`)
+	bulletHeader    = regexp.MustCompile(`(?mi)^[+*\-][ \t]+(?:version[ \t]+)?(` + versionTokenPattern + `)(?:[ \t]+\((\d{4}-\d{2}-\d{2})\))?[ \t]*$`)
+	colonHeader     = regexp.MustCompile(`(?m)^(` + versionTokenPattern + `):(?:[ \t]+.*)?$`)
+	bracketHeader   = regexp.MustCompile(`(?m)^\[(` + versionTokenPattern + `)\](?:[ \t]+.*)?$`)
+	adornedHeader   = regexp.MustCompile(`(?m)^(?:!+|==+)[ \t]+(` + versionTokenPattern + `)(?:[ \t]+.*)?$`)
+	dateHeader      = regexp.MustCompile(`(?mi)^\d{4}-\d{2}-\d{2}(?:[ \t]+[-:])?[ \t]+(?:version[ \t]+)?(` + versionTokenPattern + `)(?:[ \t]+.*)?$`)
+	bareHeader      = regexp.MustCompile(`(?m)^(` + versionTokenPattern + `)(?:[ \t]+.*)?$`)
 )
 
 // Common changelog filenames in priority order.
@@ -72,6 +80,8 @@ var changelogExtensions = []string{".md", ".txt", ".rst", ".rdoc", ".markdown", 
 type versionEntry struct {
 	version string
 	entry   Entry
+	start   int
+	line    int
 }
 
 // Parser holds the parsed changelog data and provides access methods.
@@ -267,104 +277,67 @@ func (p *Parser) Entries() map[string]Entry {
 
 // Between returns the content between two version headers.
 // Either version can be empty to indicate the start or end of the changelog.
+// Non-empty bounds must match versions extracted with the selected format.
+// A leading "v" or "V" prefix is ignored when matching bounds.
 // Returns the content and true if found, or empty string and false if not.
 func (p *Parser) Between(oldVersion, newVersion string) (string, bool) {
-	oldLine := p.LineForVersion(oldVersion)
-	newLine := p.LineForVersion(newVersion)
-	lines := strings.Split(p.content, "\n")
-
-	var start, end int
-	found := false
-
-	switch {
-	case oldLine >= 0 && newLine >= 0:
-		if oldLine < newLine {
-			// Ascending: old appears first, take from old line to end
-			start = oldLine
-			end = len(lines)
-		} else {
-			// Descending (typical): new appears first, take from new to old
-			start = newLine
-			end = oldLine
-		}
-		found = true
-	case oldLine >= 0:
-		if oldLine == 0 {
-			return "", false
-		}
-		start = 0
-		end = oldLine
-		found = true
-	case newLine >= 0:
-		start = newLine
-		end = len(lines)
-		found = true
+	p.ensureParsed()
+	oldIndex := p.indexForVersion(oldVersion)
+	newIndex := p.indexForVersion(newVersion)
+	if oldVersion != "" && oldIndex < 0 {
+		return "", false
 	}
-
-	if !found {
+	if newVersion != "" && newIndex < 0 {
 		return "", false
 	}
 
-	result := strings.Join(lines[start:end], "\n")
+	var start, end int
+
+	switch {
+	case oldIndex >= 0 && newIndex >= 0:
+		if oldIndex < newIndex {
+			// Ascending: exclude old and include new
+			start = p.entries[oldIndex+1].start
+			end = p.contentEnd(newIndex)
+		} else {
+			// Descending (typical): new appears first, take from new to old
+			start = p.entries[newIndex].start
+			end = p.entries[oldIndex].start
+		}
+	case oldIndex >= 0:
+		if p.entries[oldIndex].line == 0 {
+			return "", false
+		}
+		start = 0
+		end = p.entries[oldIndex].start
+	case newIndex >= 0:
+		start = p.entries[newIndex].start
+		end = len(p.content)
+	default:
+		return "", false
+	}
+
+	result := p.content[start:end]
 	result = strings.TrimRight(result, " \t\n")
 	return result, true
 }
 
-// LineForVersion returns the 0-based line number where the given version
-// header appears, or -1 if not found. Strips a leading "v" prefix for matching.
+func (p *Parser) contentEnd(index int) int {
+	if index+1 < len(p.entries) {
+		return p.entries[index+1].start
+	}
+	return len(p.content)
+}
+
+// LineForVersion returns the 0-based line number for an extracted version
+// header, or -1 if not found. Strips a leading "v" prefix for matching.
 func (p *Parser) LineForVersion(version string) int {
-	if version == "" {
+	p.ensureParsed()
+	index := p.indexForVersion(version)
+	if index < 0 {
 		return -1
 	}
-
-	version = trimVersionPrefix(version)
-	escaped := regexp.QuoteMeta(version)
-
-	// Go's regexp doesn't support lookbehinds, so we check surrounding
-	// characters manually after finding a match.
-	versionRe := regexp.MustCompile(escaped)
-	rangeRe := regexp.MustCompile(escaped + `\.\.`)
-
-	lines := strings.Split(p.content, "\n")
-
-	for i, line := range lines {
-		if !containsVersion(line, versionRe) {
-			continue
-		}
-		if rangeRe.MatchString(line) {
-			continue
-		}
-
-		// Check if this line looks like a version header
-		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "!") || strings.HasPrefix(line, "==") {
-			return i
-		}
-		versionLineRe := regexp.MustCompile(`^v?` + escaped + `:?\s`)
-		if versionLineRe.MatchString(line) {
-			return i
-		}
-		bracketRe := regexp.MustCompile(`^\[` + escaped + `\]`)
-		if bracketRe.MatchString(line) {
-			return i
-		}
-		bulletRe := regexp.MustCompile(`(?i)^[+*\-]\s+(version\s+)?` + escaped)
-		if bulletRe.MatchString(line) {
-			return i
-		}
-		dateLineRe := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}`)
-		if dateLineRe.MatchString(line) {
-			return i
-		}
-		// Check if next line is an underline
-		if i+1 < len(lines) {
-			underlineRe := regexp.MustCompile(`^[=\-+]{3,}\s*$`)
-			if underlineRe.MatchString(lines[i+1]) {
-				return i
-			}
-		}
-	}
-
-	return -1
+	return p.entries[index].line
 }
 
 func trimVersionPrefix(version string) string {
@@ -372,45 +345,29 @@ func trimVersionPrefix(version string) string {
 	return strings.TrimPrefix(version, "V")
 }
 
-// containsVersion checks if a line contains the version string without it
-// being a substring of a longer version (e.g. 1.0.1 should not match inside 1.0.10).
-// Allows a preceding 'v' or 'V' since version headers commonly use that prefix.
-func containsVersion(line string, versionRe *regexp.Regexp) bool {
-	for _, loc := range versionRe.FindAllStringIndex(line, -1) {
-		// Check char before match: must not be a dot or word char (except v/V prefix)
-		if loc[0] > 0 {
-			prev := line[loc[0]-1]
-			if prev == '.' {
-				continue
-			}
-			if isWordChar(prev) && prev != 'v' && prev != 'V' {
-				continue
-			}
-		}
-		// Check char after match: must not be dot, dash, or word char
-		if loc[1] < len(line) {
-			next := line[loc[1]]
-			if next == '.' || next == '-' || isWordChar(next) {
-				continue
-			}
-		}
-		return true
-	}
-	return false
-}
-
-func isWordChar(b byte) bool {
-	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
-}
-
 func (p *Parser) detectFormat() *regexp.Regexp {
-	if keepAChangelog.MatchString(p.content) {
-		return keepAChangelog
+	patterns := []*regexp.Regexp{
+		keepAChangelog,
+		underlineHeader,
+		markdownHeader,
+		bulletHeader,
+		colonHeader,
+		bracketHeader,
+		adornedHeader,
+		dateHeader,
+		bareHeader,
 	}
-	if underlineHeader.MatchString(p.content) {
-		return underlineHeader
+	selected := markdownHeader
+	matchCount := 0
+	// Declaration order breaks ties between formats with the same header count.
+	for _, pattern := range patterns {
+		matches := len(pattern.FindAllStringIndex(p.content, -1))
+		if matches > matchCount {
+			selected = pattern
+			matchCount = matches
+		}
 	}
-	return markdownHeader
+	return selected
 }
 
 func (p *Parser) ensureParsed() {
@@ -431,7 +388,11 @@ func (p *Parser) doParse() {
 		return
 	}
 
+	line := 0
+	previousMatch := 0
 	for i, match := range matches {
+		line += strings.Count(p.content[previousMatch:match[0]], "\n")
+		previousMatch = match[0]
 		version := p.extractGroup(match, p.matchGroup)
 		date := p.extractDate(match)
 
@@ -452,12 +413,27 @@ func (p *Parser) doParse() {
 
 		p.entries = append(p.entries, versionEntry{
 			version: version,
+			start:   match[0],
+			line:    line,
 			entry: Entry{
 				Date:    datep,
 				Content: content,
 			},
 		})
 	}
+}
+
+func (p *Parser) indexForVersion(version string) int {
+	if version == "" {
+		return -1
+	}
+	target := trimVersionPrefix(version)
+	for i, entry := range p.entries {
+		if trimVersionPrefix(entry.version) == target {
+			return i
+		}
+	}
+	return -1
 }
 
 func (p *Parser) extractGroup(match []int, group int) string {
