@@ -131,4 +131,4 @@ Minor release.
 
 ## License
 
-MIT
+[MIT](LICENSE).
