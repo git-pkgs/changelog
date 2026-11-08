@@ -29,6 +29,21 @@ for _, v := range p.Versions() {
 p, err := changelog.ParseFile("CHANGELOG.md")
 ```
 
+### Scan document blocks
+
+`BlockScanner` reads headings, list items, and text from an `io.Reader`. Markdown, AsciiDoc, and setext or RST headings are recognized without requiring version headers.
+
+```go
+scanner := changelog.NewBlockScanner(reader)
+for scanner.Scan() {
+    block := scanner.Block()
+    fmt.Printf("%d %d %s\n", block.Kind, block.Level, block.Text)
+}
+if err := scanner.Err(); err != nil {
+    return err
+}
+```
+
 ### Find and parse a changelog in a directory
 
 ```go
