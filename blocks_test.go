@@ -66,6 +66,24 @@ func TestBlockScannerSupportsLongLines(t *testing.T) {
 	}
 }
 
+func TestBlockScannerKeepsUnderlineAfterPrefixedHeading(t *testing.T) {
+	scanner := NewBlockScanner(strings.NewReader("# Title\n---\n"))
+	var got []Block
+	for scanner.Scan() {
+		got = append(got, scanner.Block())
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	want := []Block{
+		{Kind: BlockHeading, Text: "Title", Level: 1},
+		{Kind: BlockText, Text: "---"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("blocks = %#v, want %#v", got, want)
+	}
+}
+
 func TestBlockScannerReportsReadErrorsAfterPartialData(t *testing.T) {
 	wantErr := errors.New("read failed")
 	scanner := NewBlockScanner(&partialErrorReader{data: "security update", err: wantErr})

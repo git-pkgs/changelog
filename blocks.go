@@ -145,7 +145,11 @@ func underlineHeading(line string) (int, bool) {
 }
 
 func headingCandidate(line string) bool {
-	return line != "" && !listItem(line) && !strings.HasPrefix(line, ".. ")
+	if line == "" || listItem(line) || strings.HasPrefix(line, ".. ") {
+		return false
+	}
+	_, _, heading := prefixedHeading(line)
+	return !heading
 }
 
 func listItem(line string) bool {
