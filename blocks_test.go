@@ -67,7 +67,7 @@ func TestBlockScannerSupportsLongLines(t *testing.T) {
 }
 
 func TestBlockScannerKeepsUnderlineAfterPrefixedHeading(t *testing.T) {
-	scanner := NewBlockScanner(strings.NewReader("# Title\n---\n"))
+	scanner := NewBlockScanner(strings.NewReader("# Title\n---\n~~~\n"))
 	var got []Block
 	for scanner.Scan() {
 		got = append(got, scanner.Block())
@@ -78,6 +78,7 @@ func TestBlockScannerKeepsUnderlineAfterPrefixedHeading(t *testing.T) {
 	want := []Block{
 		{Kind: BlockHeading, Text: "Title", Level: 1},
 		{Kind: BlockText, Text: "---"},
+		{Kind: BlockText, Text: "~~~"},
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("blocks = %#v, want %#v", got, want)

@@ -148,6 +148,9 @@ func headingCandidate(line string) bool {
 	if line == "" || listItem(line) || strings.HasPrefix(line, ".. ") {
 		return false
 	}
+	if _, separator := underlineHeading(line); separator {
+		return false
+	}
 	_, _, heading := prefixedHeading(line)
 	return !heading
 }
